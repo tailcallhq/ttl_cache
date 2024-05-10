@@ -4,13 +4,19 @@
 //! Instead the expired values are removed opportunistically as they are reference or if
 //! `remove_expired` is explicitly called.
 extern crate linked_hash_map;
+extern crate wasm_timer;
 
 use std::borrow::Borrow;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hash};
 #[cfg(feature = "stats")]
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_timer::Instant;
 
 use linked_hash_map::Entry as LinkedHashMapEntry;
 use linked_hash_map::LinkedHashMap;
@@ -130,8 +136,6 @@ pub struct TtlCache<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     hits: AtomicUsize,
     #[cfg(feature = "stats")]
     misses: AtomicUsize,
-    #[cfg(feature = "stats")]
-    since: Instant,
 }
 
 impl<K: Eq + Hash, V> TtlCache<K, V> {
@@ -152,8 +156,6 @@ impl<K: Eq + Hash, V> TtlCache<K, V> {
             hits: AtomicUsize::new(0),
             #[cfg(feature = "stats")]
             misses: AtomicUsize::new(0),
-            #[cfg(feature = "stats")]
-            since: Instant::now(),
         }
     }
 }
@@ -169,8 +171,6 @@ impl<K: Eq + Hash, V, S: BuildHasher> TtlCache<K, V, S> {
             hits: AtomicUsize::new(0),
             #[cfg(feature = "stats")]
             misses: AtomicUsize::new(0),
-            #[cfg(feature = "stats")]
-            since: Instant::now(),
         }
     }
 
@@ -504,7 +504,6 @@ impl<K: Eq + Hash, V, S: BuildHasher> TtlCache<K, V, S> {
     pub fn reset_stats_counter(&mut self) {
         self.hits = AtomicUsize::new(0);
         self.misses = AtomicUsize::new(0);
-        self.since = Instant::now();
     }
 
     /// Returns the number of unexpired cache hits since the last time the counters were reset.
@@ -552,13 +551,6 @@ impl<K: Eq + Hash, V, S: BuildHasher> TtlCache<K, V, S> {
         self.misses.load(Ordering::Relaxed)
     }
 
-    /// Returns the Instant when we started gathering stats.  This is either when the cache was
-    /// created or when it was last reset, whichever happened most recently.
-    #[cfg(feature = "stats")]
-    pub fn stats_since(&self) -> Instant {
-        self.since
-    }
-
     // This isn't made pubic because the length returned isn't exact. It can include expired values.
     // If people find that they want this then I can include a length method that trims expired
     // entries then returns the size, but I'd rather now.  One wouldn't expect a len() operation
@@ -585,8 +577,6 @@ where
             hits: AtomicUsize::new(self.hits.load(Ordering::Relaxed)),
             #[cfg(feature = "stats")]
             misses: AtomicUsize::new(self.misses.load(Ordering::Relaxed)),
-            #[cfg(feature = "stats")]
-            since: self.since,
         }
     }
 }
